@@ -89,6 +89,23 @@ The EDA notebook generates interactive Plotly charts for:
 
 These charts are saved as HTML files under `outputs/figures/`.
 
+## Output Figures
+
+The project exports interactive Plotly visualizations as standalone HTML files. Open these files locally in a browser to inspect hover details, legends, and chart interactions.
+
+| Output | File | Description |
+|---|---|---|
+| Top 10 drugs by adverse event reports | [`outputs/figures/top_10_drugs_by_adverse_events.html`](outputs/figures/top_10_drugs_by_adverse_events.html) | Bar chart showing the drugs with the highest adverse event report counts |
+| Outcome distribution | [`outputs/figures/outcome_distribution.html`](outputs/figures/outcome_distribution.html) | Interactive outcome breakdown across the cleaned FAERS sample |
+| Outcome by age group | [`outputs/figures/outcome_by_age_group.html`](outputs/figures/outcome_by_age_group.html) | Stacked comparison of adverse event outcomes across age groups |
+| Streamlit dashboard preview | [`outputs/figures/streamlit output.pdf`](outputs/figures/streamlit%20output.pdf) | Exported preview of the dashboard output |
+
+The main signal detection result is saved separately:
+
+| Output | File | Description |
+|---|---|---|
+| Flagged PRR signals | [`outputs/signals/flagged_signals.csv`](outputs/signals/flagged_signals.csv) | Ranked drug-reaction pairs with cases, PRR, 95% confidence interval, and priority label |
+
 ### 3. Signal Detection
 
 The signal detection notebook applies proportional reporting ratio analysis on the serious-event subset.
@@ -202,7 +219,7 @@ High PRR values indicate disproportionate reporting, not proof of causality. The
 | RITUXIMAB | 83 |
 | LENALIDOMIDE | 82 |
 
-## Dashboard
+## Streamlit Dashboard
 
 The Streamlit app loads `outputs/signals/flagged_signals.csv` and provides:
 
@@ -211,11 +228,19 @@ The Streamlit app loads `outputs/signals/flagged_signals.csv` and provides:
 - Filtered signal table
 - PRR bar chart by reaction
 
+Dashboard file:
+
+```text
+app/streamlit_app.py
+```
+
 Run it with:
 
 ```bash
 streamlit run app/streamlit_app.py
 ```
+
+The dashboard is designed for quick pharmacovigilance review: select a drug, adjust the minimum PRR threshold, and inspect the filtered reaction-level signal table and chart.
 
 ## How to Run
 
