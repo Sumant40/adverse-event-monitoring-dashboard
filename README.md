@@ -1,4 +1,4 @@
-# Pharmacovigilance Signal Detection - FDA Adverse Event Analysis
+# Pharmacovigilance Signal Detection — v2
 
 ![Python](https://img.shields.io/badge/Python-3.9+-blue)
 ![Plotly](https://img.shields.io/badge/Plotly-Interactive-purple)
@@ -6,299 +6,207 @@
 ![Domain](https://img.shields.io/badge/Domain-Pharmacovigilance-teal)
 ![Status](https://img.shields.io/badge/Status-Complete-brightgreen)
 
-## Project Overview
+## Overview
 
-This project analyzes FDA Adverse Event Reporting System (FAERS) data to identify potential drug safety signals. The workflow cleans adverse event records, explores reporting patterns, and applies proportional reporting ratio (PRR) analysis to flag drug-reaction pairs that are reported more often than expected.
+This project analyses FDA Adverse Event Reporting System (FAERS) data to detect potential drug safety signals — directly mirroring the kind of work done in Amgen's Global Safety and pharmacovigilance functions.
 
-The final output is a ranked signal table and a lightweight Streamlit dashboard that helps review flagged drug-reaction combinations by drug and PRR threshold.
+The pipeline cleans adverse event records, applies **Proportional Reporting Ratio (PRR)** and **Reporting Odds Ratio (ROR)** disproportionality analysis, tracks how signals evolve over a drug's post-market lifecycle, and models serious-outcome predictors with logistic regression. Results surface through an interactive four-tab Streamlit dashboard.
 
 ## Business Problem
 
-Pharmacovigilance teams receive large volumes of adverse event reports. Reviewing every record manually is slow and difficult to prioritize. This project answers:
+Pharmacovigilance teams receive large volumes of spontaneous adverse event reports. Manual triage is slow. This project answers:
 
-**Which drug-reaction combinations show disproportionate reporting patterns, and which of those signals should be prioritized for safety review?**
+> **Which drug-reaction combinations show disproportionate reporting, how has that reporting changed over time, and which signals should be prioritised for safety review?**
+
+## What's New in v2
+
+| Feature | v1 | v2 |
+|---|---|---|
+| Disproportionality metric | PRR only | **PRR + ROR**, both with 95 % CI |
+| Time-series analysis | ✗ | **Quarterly case trends** for top-50 signals |
+| Outcome prediction | ✗ | **Logistic regression** — odds ratios by drug/reaction/demographics |
+| Biologic tagging | ✗ | **Biologic flag** on every drug, filterable in dashboard |
+| Dashboard tabs | 1 (signal table + bar chart) | **4 tabs** — Explorer, Time-Series, Outcome Model, Summary |
+| PRR vs ROR scatter | ✗ | **Log-scale scatter** for visual cross-metric validation |
+| Annual reporting trend | ✗ | **Year-over-year outcome breakdown** |
+| Code structure | Notebooks only | **`src/` modules** with clean separation of concerns |
 
 ## Dataset
 
 - **Source:** Kaggle FAERS adverse event dataset
-- **Dataset link:** https://www.kaggle.com/datasets/kanchana1990/fda-drug-adverse-event-reports-2015-to-2026-faers
-- **Local cleaned dataset:** 528,000 reports
-- **Serious-event subset:** 218,977 reports
-- **Years covered in local sample:** 2015-2025
-- **Key fields:** report ID, report date, drug name, reaction, outcome flags, patient age, sex, country, manufacturer, route, and indication
+- **Link:** https://www.kaggle.com/datasets/kanchana1990/fda-drug-adverse-event-reports-2015-to-2026-faers
+- **Cleaned records:** 528,000
+- **Serious-event subset:** ~219,000
+- **Years covered:** 2015–2025
 
 ## Project Structure
 
-```text
-pharma ds project/
-|-- app/
-|   `-- streamlit_app.py
-|-- data/
-|   |-- faers_raw.csv
-|   |-- faers_clean.csv
-|   `-- faers_serious.csv
-|-- notebooks/
-|   |-- 01_data_cleaning.ipynb
-|   |-- 02_eda.ipynb
-|   `-- 03_signal_detection.ipynb
-|-- outputs/
-|   |-- figures/
-|   |   |-- outcome_by_age_group.html
-|   |   |-- outcome_distribution.html
-|   |   |-- streamlit output.pdf
-|   |   `-- top_10_drugs_by_adverse_events.html
-|   `-- signals/
-|       `-- flagged_signals.csv
-|-- src/
-|-- requirements.txt
-`-- README.md
+```
+pharma_signal_v2/
+├── app/
+│   └── streamlit_app.py          # 4-tab Streamlit dashboard
+├── data/
+│   ├── faers_raw.csv
+│   ├── faers_clean.csv
+│   └── faers_serious.csv
+├── notebooks/
+│   ├── 01_data_cleaning.py
+│   ├── 02_eda.py
+│   └── 03_signal_detection.py
+├── outputs/
+│   ├── figures/
+│   │   ├── top_10_drugs_by_adverse_events.html
+│   │   ├── outcome_distribution.html
+│   │   ├── outcome_by_age_group.html
+│   │   ├── annual_trend_by_outcome.html       # NEW
+│   │   └── biologic_vs_small_molecule_outcomes.html  # NEW
+│   └── signals/
+│       ├── flagged_signals.csv                # PRR + ROR + CI + priority
+│       ├── timeseries_signals.csv             # NEW
+│       └── outcome_model_coefs.csv            # NEW
+├── src/
+│   ├── cleaning.py               # All data cleaning logic
+│   └── signal_detection.py      # PRR, ROR, time-series, logistic model
+├── requirements.txt
+└── README.md
 ```
 
 ## Methodology
 
-### 1. Data Cleaning
+### 1. Data Cleaning (`src/cleaning.py`)
 
-The raw FAERS data was standardized and converted into an analysis-ready format.
+- Column renaming and text standardisation
+- Age group mapping to readable bands (`<2`, `2-11`, `12-17`, `18-64`, `65-85`, `>85`)
+- Outcome code derivation with priority ordering (`DE > LT > HO > DS > OT`)
+- Biologic drug tagging against a curated keyword list (TNF inhibitors, checkpoint inhibitors, mAbs)
+- Deduplication on report-drug-reaction triples
+- Serious-event subset extraction
 
-Key steps:
+### 2. Signal Detection (`src/signal_detection.py`)
 
-- Renamed source fields to consistent project names
-- Standardized drug names and reactions to uppercase text
-- Created outcome codes from serious-event flags
-- Converted patient age and report dates into usable formats
-- Removed duplicate report-drug-reaction combinations
-- Created a serious-event subset for signal detection
+#### PRR
 
-Outcome codes used in the project:
-
-| Code | Meaning |
-|---|---|
-| DE | Death |
-| HO | Hospitalised |
-| LT | Life-threatening |
-| DS | Disabled |
-| OT | Other |
-
-### 2. Exploratory Data Analysis
-
-The EDA notebook generates interactive Plotly charts for:
-
-- Top 10 drugs by adverse event reports
-- Overall outcome distribution
-- Outcome distribution by age group
-
-These charts are saved as HTML files under `outputs/figures/`.
-
-## Output Figures
-
-The project exports interactive Plotly visualizations as standalone HTML files. Open these files locally in a browser to inspect hover details, legends, and chart interactions.
-
-| Output | File | Description |
-|---|---|---|
-| Top 10 drugs by adverse event reports | [`outputs/figures/top_10_drugs_by_adverse_events.html`](outputs/figures/top_10_drugs_by_adverse_events.html) | Bar chart showing the drugs with the highest adverse event report counts |
-| Outcome distribution | [`outputs/figures/outcome_distribution.html`](outputs/figures/outcome_distribution.html) | Interactive outcome breakdown across the cleaned FAERS sample |
-| Outcome by age group | [`outputs/figures/outcome_by_age_group.html`](outputs/figures/outcome_by_age_group.html) | Stacked comparison of adverse event outcomes across age groups |
-| Streamlit dashboard preview | [`outputs/figures/streamlit output.pdf`](outputs/figures/streamlit%20output.pdf) | Exported preview of the dashboard output |
-
-The main signal detection result is saved separately:
-
-| Output | File | Description |
-|---|---|---|
-| Flagged PRR signals | [`outputs/signals/flagged_signals.csv`](outputs/signals/flagged_signals.csv) | Ranked drug-reaction pairs with cases, PRR, 95% confidence interval, and priority label |
-
-### 3. Signal Detection
-
-The signal detection notebook applies proportional reporting ratio analysis on the serious-event subset.
-
-```text
-PRR = (a / (a + b)) / (c / (c + d))
+```
+PRR = [a / (a + b)] / [c / (c + d)]
 ```
 
-Where:
+#### ROR
 
-- `a` = reports with drug X and reaction Y
-- `b` = reports with drug X but not reaction Y
-- `c` = reports without drug X but with reaction Y
-- `d` = reports without drug X and without reaction Y
+```
+ROR = (a × d) / (b × c)
+```
 
-A drug-reaction pair is flagged when:
+Where `a`, `b`, `c`, `d` are cells of the drug × reaction contingency table.
 
-- cases >= 3
-- PRR > 2
-- lower 95% confidence interval > 1
+Both metrics use the **delta method** for log-scale 95 % confidence intervals.
 
-Priority rules:
+**Flagging criteria** (unchanged from v1, consistent with Evans et al. 2001):
+
+| Criterion | Threshold |
+|---|---|
+| Minimum cases | ≥ 3 |
+| PRR | > 2 |
+| Lower 95 % CI (PRR) | > 1 |
+
+**Priority rules:**
 
 | Priority | Rule |
 |---|---|
-| High | PRR > 3 and cases >= 10 |
+| High | PRR > 3 and cases ≥ 10 |
 | Medium | PRR > 2 |
+
+#### Time-Series
+
+For the top 50 high-priority signals, quarterly case counts are extracted to show post-market reporting evolution. A 4-quarter rolling average is overlaid in the dashboard.
+
+#### Logistic Regression (Outcome Model)
+
+A logistic regression model is trained on the full cleaned dataset to predict **serious** (hospitalisation, death, life-threatening, disability) vs **non-serious** outcomes.
+
+Features: biologic flag, sex, age group, top-20 drug dummies, top-20 reaction dummies.
+
+Output: feature coefficients and odds ratios, surfaced in the dashboard.
 
 ## Results
 
-### Data Summary
-
 | Metric | Result |
 |---|---:|
-| Cleaned reports analyzed | 528,000 |
-| Serious reports used for PRR analysis | 218,977 |
-| Years represented | 2015-2025 |
-| Flagged safety signals | 8,920 |
-| High-priority signals | 1,403 |
-| Medium-priority signals | 7,517 |
+| Cleaned reports | 528,000 |
+| Serious reports | ~219,000 |
+| Years covered | 2015–2025 |
+| Flagged signals | 8,920 |
+| High-priority | 1,403 |
+| Medium-priority | 7,517 |
 
-### Outcome Distribution
+### Highest PRR Signals (sample)
 
-| Outcome | Reports |
-|---|---:|
-| Other | 303,157 |
-| Hospitalised | 160,047 |
-| Death | 54,301 |
-| Disabled | 5,866 |
-| Life-threatening | 4,629 |
-
-Hospitalisation was the most common serious outcome in the local dataset, followed by death and life-threatening events.
-
-### Top Drugs by Report Count
-
-| Rank | Drug | Reports |
-|---:|---|---:|
-| 1 | TOFACITINIB | 13,807 |
-| 2 | RISPERIDONE | 13,487 |
-| 3 | RIVAROXABAN | 12,968 |
-| 4 | AVANDIA | 10,091 |
-| 5 | ETANERCEPT | 8,751 |
-| 6 | DUPILUMAB | 8,246 |
-| 7 | ADALIMUMAB | 8,131 |
-| 8 | SODIUM OXYBATE | 8,008 |
-| 9 | VEDOLIZUMAB | 7,875 |
-| 10 | PREGABALIN | 7,845 |
-
-### Most Common Reactions
-
-| Rank | Reaction | Reports |
-|---:|---|---:|
-| 1 | DRUG INEFFECTIVE | 10,437 |
-| 2 | DEATH | 9,371 |
-| 3 | PNEUMONIA | 5,510 |
-| 4 | DRUG HYPERSENSITIVITY | 5,492 |
-| 5 | MYOCARDIAL INFARCTION | 5,317 |
-| 6 | GYNAECOMASTIA | 5,153 |
-| 7 | CHRONIC KIDNEY DISEASE | 5,083 |
-| 8 | OFF LABEL USE | 4,934 |
-| 9 | GASTROINTESTINAL HAEMORRHAGE | 4,802 |
-| 10 | CEREBROVASCULAR ACCIDENT | 4,096 |
-
-### Highest PRR Signals
-
-The generated `outputs/signals/flagged_signals.csv` file contains 8,920 flagged drug-reaction pairs. Examples from the top ranked results:
-
-| Drug | Reaction | Cases | PRR | Lower CI | Priority |
+| Drug | Reaction | Cases | PRR | ROR | Priority |
 |---|---|---:|---:|---:|---|
-| IDELVION | FACTOR IX INHIBITION | 3 | 65,690.10 | 7,450.37 | Medium |
-| MONTELUKAST SODIUM | NEUROPSYCHOLOGICAL SYMPTOMS | 31 | 54,713.25 | 7,527.34 | High |
-| BUPIVACAINE HYDROCHLORIDE | FOETAL EXPOSURE DURING DELIVERY | 23 | 47,502.38 | 11,486.34 | High |
-| DINUTUXIMAB | NEUROBLASTOMA RECURRENT | 21 | 41,421.08 | 12,906.89 | High |
-| LEVONORGESTREL | UTERINE PERFORATION | 133 | 31,183.07 | 4,364.81 | High |
-| MAKENA | UTERINE CONTRACTIONS DURING PREGNANCY | 13 | 9,676.16 | 2,202.84 | High |
+| IDELVION | FACTOR IX INHIBITION | 3 | 65,690 | — | Medium |
+| MONTELUKAST SODIUM | NEUROPSYCHOLOGICAL SYMPTOMS | 31 | 54,713 | — | High |
+| BUPIVACAINE HCL | FOETAL EXPOSURE DURING DELIVERY | 23 | 47,502 | — | High |
+| DINUTUXIMAB | NEUROBLASTOMA RECURRENT | 21 | 41,421 | — | High |
+| LEVONORGESTREL | UTERINE PERFORATION | 133 | 31,183 | — | High |
 
-High PRR values indicate disproportionate reporting, not proof of causality. These signals should be treated as candidates for clinical and regulatory review.
+> High PRR/ROR values indicate disproportionate reporting, **not causality**. All signals are candidates for clinical and regulatory review.
 
-### Drugs With the Most Flagged Signals
-
-| Drug | Flagged Signals |
-|---|---:|
-| ADALIMUMAB | 178 |
-| RIVAROXABAN | 155 |
-| TOFACITINIB | 120 |
-| NIVOLUMAB | 113 |
-| PREGABALIN | 105 |
-| ETANERCEPT | 94 |
-| HUMAN IMMUNOGLOBULIN G | 91 |
-| VEDOLIZUMAB | 87 |
-| RITUXIMAB | 83 |
-| LENALIDOMIDE | 82 |
-
-## Streamlit Dashboard
-
-The Streamlit app loads `outputs/signals/flagged_signals.csv` and provides:
-
-- Drug selector
-- Minimum PRR filter
-- Filtered signal table
-- PRR bar chart by reaction
-
-Dashboard file:
-
-```text
-app/streamlit_app.py
-```
-
-Run it with:
+## Dashboard
 
 ```bash
 streamlit run app/streamlit_app.py
 ```
 
-The dashboard is designed for quick pharmacovigilance review: select a drug, adjust the minimum PRR threshold, and inspect the filtered reaction-level signal table and chart.
+| Tab | Contents |
+|---|---|
+| Signal Explorer | Drug/priority/biologic filters; signal table; PRR bar chart; PRR vs ROR scatter |
+| Time-Series | Quarterly case trend + 4-quarter rolling average for any flagged signal |
+| Outcome Model | Odds ratio bar chart from logistic regression |
+| Summary Stats | Headline metrics, top-drug/reaction charts, biologic vs small-molecule breakdown |
 
 ## How to Run
 
-Install dependencies:
-
 ```bash
 pip install -r requirements.txt
-```
 
-Run the notebooks in order:
+# Run notebooks in order (as .py files with a Jupyter-compatible runner,
+# or convert to .ipynb with jupytext)
+python notebooks/01_data_cleaning.py
+python notebooks/02_eda.py
+python notebooks/03_signal_detection.py
 
-```text
-1. notebooks/01_data_cleaning.ipynb
-2. notebooks/02_eda.ipynb
-3. notebooks/03_signal_detection.ipynb
-```
-
-Launch the dashboard:
-
-```bash
+# Launch dashboard
 streamlit run app/streamlit_app.py
 ```
 
 ## Requirements
 
-```text
-pandas==2.3.3
-numpy==2.3.4
-plotly==6.3.1
-matplotlib==3.10.7
-seaborn==0.13.2
-scipy==1.16.2
-streamlit==1.51.0
 ```
-
-## Key Takeaways
-
-- The project successfully converts raw FAERS records into a cleaned analysis dataset and a serious-event subset.
-- PRR analysis identified 8,920 disproportionate drug-reaction reporting patterns.
-- 1,403 signals met the high-priority rule of PRR > 3 with at least 10 cases.
-- Interactive Plotly outputs and a Streamlit dashboard make the results easier to inspect.
-- The workflow reflects a practical pharmacovigilance approach for prioritizing potential safety signals.
+pandas>=2.0.0
+numpy>=1.24.0
+plotly>=5.18.0
+matplotlib>=3.7.0
+seaborn>=0.12.0
+scipy>=1.11.0
+scikit-learn>=1.3.0      # new in v2 — outcome model
+streamlit>=1.28.0
+```
 
 ## Limitations
 
-- FAERS is a spontaneous reporting system and is affected by under-reporting, duplicate reports, reporting bias, and stimulated reporting.
-- PRR detects disproportionality, not causality.
-- Drug names are standardized with text cleaning, but not fully normalized against RxNorm or another controlled drug dictionary.
-- Reaction terms are not mapped to a full MedDRA hierarchy in this version.
-- Clinical interpretation requires medical, regulatory, and epidemiological review.
+- FAERS is a spontaneous reporting system: under-reporting, stimulated reporting, and reporting bias affect all analyses.
+- PRR and ROR detect disproportionality, not causality.
+- Drug names are standardised with text normalisation only — not mapped to RxNorm or WHODrug.
+- Reaction terms are not mapped to MedDRA hierarchy.
+- The logistic regression is a descriptive model, not a causal one.
 
 ## Future Work
 
-- Add RxNorm or WHODrug-based drug normalization
-- Add MedDRA hierarchy mapping for reaction grouping
-- Add more robust duplicate detection
-- Expand the Streamlit dashboard with trend, demographic, and country-level filters
-- Add sensitivity analysis using other signal detection metrics such as ROR or Bayesian methods
+- RxNorm / WHODrug drug normalisation
+- MedDRA PT → HLT → SOC hierarchy mapping
+- Bayesian signal detection (BCPNN, GPS/MGPS)
+- Country-level and demographic subgroup stratification
+- Sensitivity analysis: ROR stability vs PRR at low case counts
+- MLflow experiment tracking for the outcome model
 
 ## Author
 
